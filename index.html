@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Satellite Location Transition</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        .inputs {
+            padding: 15px;
+            background-color: #f0f0f0;
+            border-bottom: 1px solid #ccc;
+        }
+        .map-container {
+            flex-grow: 1;
+            position: relative;
+        }
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .input-field {
+            flex: 1;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #3367d6;
+        }
+        #recordBtn {
+            background-color: #ea4335;
+        }
+        #recordBtn:hover {
+            background-color: #d33426;
+        }
+        .controls {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+        }
+        .status {
+            padding: 10px;
+            text-align: center;
+            font-weight: bold;
+            color: #4285f4;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="inputs">
+            <h2>Satellite Location Transition</h2>
+            <div class="input-group">
+                <div class="input-field">
+                    <label for="lat1">Starting Latitude:</label>
+                    <input type="text" id="lat1" placeholder="e.g. 48.8584" value="48.8584">
+                </div>
+                <div class="input-field">
+                    <label for="lng1">Starting Longitude:</label>
+                    <input type="text" id="lng1" placeholder="e.g. 2.2945" value="2.2945">
+                </div>
+            </div>
+            <div class="input-group">
+                <div class="input-field">
+                    <label for="lat2">Ending Latitude:</label>
+                    <input type="text" id="lat2" placeholder="e.g. 40.7128" value="40.7128">
+                </div>
+                <div class="input-field">
+                    <label for="lng2">Ending Longitude:</label>
+                    <input type="text" id="lng2" placeholder="e.g. -74.0060" value="-74.0060">
+                </div>
+            </div>
+            <div class="controls">
+                <button id="startBtn">Start Animation</button>
+                <button id="resetBtn">Reset Map</button>
+                <button id="recordBtn">Record & Save Animation</button>
+            </div>
+        </div>
+        <div class="status" id="status">Enter coordinates and click "Start Animation"</div>
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <script>
+        // Add MediaRecorder API support
+        const mimeType = 'video/webm';
+        let mediaRecorder;
+        let recordedChunks = [];
+        let recording = false;
+        
+        // Initialize the map
+        const map = L.map('map').setView([0, 0], 2);
+        
+        // Add satellite tile layer
+        L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            attribution: '&copy; Google Maps'
+        }).addTo(map);
+        
+        // Default markers
+        let marker1 = null;
+        let marker2 = null;
+        
+        // Get DOM elements
+        const startBtn = document.getElementById('startBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const recordBtn = document.getElementById('recordBtn');
+        const statusEl = document.getElementById('status');
+        
+        // Function to validate coordinates
+        function validateCoords() {
+            const lat1 = parseFloat(document.getElementById('lat1').value);
+            const lng1 = parseFloat(document.getElementById('lng1').value);
+            const lat2 = parseFloat(document.getElementById('lat2').value);
+            const lng2 = parseFloat(document.getElementById('lng2').value);
+            
+            if (isNaN(lat1) || isNaN(lng1) || isNaN(lat2) || isNaN(lng2)) {
+                statusEl.textContent = "Please enter valid coordinates";
+                statusEl.style.color = "red";
+                return null;
+            }
+            
+            if (lat1 < -90 || lat1 > 90 || lat2 < -90 || lat2 > 90) {
+                statusEl.textContent = "Latitude must be between -90 and 90";
+                statusEl.style.color = "red";
+                return null;
+            }
+            
+            if (lng1 < -180 || lng1 > 180 || lng2 < -180 || lng2 > 180) {
+                statusEl.textContent = "Longitude must be between -180 and 180";
+                statusEl.style.color = "red";
+                return null;
+            }
+            
+            return { lat1, lng1, lat2, lng2 };
+        }
+        
+        // Function to update the map
+        function updateMap() {
+            const coords = validateCoords();
+            if (!coords) return;
+            
+            const { lat1, lng1, lat2, lng2 } = coords;
+            
+            // Remove existing markers
+            if (marker1) map.removeLayer(marker1);
+            if (marker2) map.removeLayer(marker2);
+            
+            // Add new markers
+            marker1 = L.marker([lat1, lng1]).addTo(map).bindPopup('Starting Location').openPopup();
+            marker2 = L.marker([lat2, lng2]).addTo(map).bindPopup('Ending Location');
+            
+            // Fit bounds to see both markers
+            const bounds = L.latLngBounds([
+                [lat1, lng1],
+                [lat2, lng2]
+            ]);
+            map.fitBounds(bounds, { padding: [50, 50] });
+            
+            statusEl.textContent = "Map updated. Click 'Start Animation' to begin.";
+            statusEl.style.color = "#4285f4";
+        }
+        
+        // Animation function
+        async function animateTransition() {
+            const coords = validateCoords();
+            if (!coords) return;
+            
+            const { lat1, lng1, lat2, lng2 } = coords;
+            startBtn.disabled = true;
+            
+            try {
+                // Step 1: Zoom in to first location
+                statusEl.textContent = "Zooming in to first location...";
+                await smoothFlyTo([lat1, lng1], 18, 3000);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // Step 2: Zoom out partially (not completely)
+                statusEl.textContent = "Zooming out partially...";
+                await smoothFlyTo([lat1, lng1], 12, 2000); // Higher zoom level (12 instead of 5)
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Step 3: Pan to second location
+                statusEl.textContent = "Panning to second location...";
+                await smoothFlyTo([(lat1 + lat2) / 2, (lng1 + lng2) / 2], 10, 2000); // Maintain higher zoom during transition
+                await smoothFlyTo([lat2, lng2], 12, 2000);
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Step 4: Zoom in to second location
+                statusEl.textContent = "Zooming in to second location...";
+                await smoothFlyTo([lat2, lng2], 18, 3000);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                statusEl.textContent = "Animation complete!";
+            } catch (error) {
+                statusEl.textContent = "Animation error: " + error.message;
+                statusEl.style.color = "red";
+            } finally {
+                startBtn.disabled = false;
+            }
+        }
+        
+        // Smooth fly-to function
+        function smoothFlyTo(latlng, zoom, duration) {
+            return new Promise(resolve => {
+                map.flyTo(latlng, zoom, {
+                    duration: duration / 1000,
+                    easeLinearity: 0.5
+                });
+                
+                setTimeout(resolve, duration);
+            });
+        }
+        
+        // Start recording function
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { 
+                        mediaSource: "screen",
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 30 }
+                    }
+                });
+                
+                recordedChunks = [];
+                mediaRecorder = new MediaRecorder(stream, { mimeType });
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                    }
+                };
+                
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: mimeType });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = 'satellite-transition.webm';
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                    }, 100);
+                    
+                    // Stop all tracks
+                    stream.getTracks().forEach(track => track.stop());
+                    recording = false;
+                    recordBtn.textContent = "Record & Save Animation";
+                    statusEl.textContent = "Recording saved!";
+                };
+                
+                mediaRecorder.start();
+                recording = true;
+                recordBtn.textContent = "Stop Recording";
+                statusEl.textContent = "Recording... Please crop to this browser window in the screen selection dialog";
+                
+                return true;
+            } catch (error) {
+                statusEl.textContent = "Recording error: " + error.message;
+                statusEl.style.color = "red";
+                return false;
+            }
+        }
+        
+        // Record and animate function
+        async function recordAndAnimate() {
+            if (recording) {
+                // Stop recording
+                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                    mediaRecorder.stop();
+                }
+                return;
+            }
+            
+            // Start recording first
+            const success = await startRecording();
+            if (success) {
+                // Give user time to select the screen area
+                setTimeout(() => {
+                    // Then start the animation
+                    animateTransition().then(() => {
+                        // Stop recording automatically after animation completes
+                        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                            setTimeout(() => {
+                                mediaRecorder.stop();
+                            }, 1000); // Give an extra second at the end
+                        }
+                    });
+                }, 1500);
+            }
+        }
+        
+        // Event listeners
+        startBtn.addEventListener('click', animateTransition);
+        resetBtn.addEventListener('click', () => {
+            map.setView([0, 0], 2);
+            statusEl.textContent = "Map reset. Enter coordinates and click 'Start Animation'.";
+            statusEl.style.color = "#4285f4";
+        });
+        recordBtn.addEventListener('click', recordAndAnimate);
+        
+        // Initialize the map with default values
+        updateMap();
+    </script>
+</body>
+</html>
