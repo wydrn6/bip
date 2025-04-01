@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Satellite Location Transition</title>
+    <title>UTM Satellite Location Transition</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
     <style>
         body, html {
             margin: 0;
@@ -22,6 +23,16 @@
             padding: 15px;
             background-color: #f0f0f0;
             border-bottom: 1px solid #ccc;
+            transition: max-height 0.5s ease, opacity 0.5s ease, padding 0.5s ease;
+            max-height: 300px;
+            opacity: 1;
+            overflow: hidden;
+        }
+        .inputs.hidden {
+            max-height: 0;
+            opacity: 0;
+            padding: 0;
+            border-bottom: none;
         }
         .map-container {
             flex-grow: 1;
@@ -38,6 +49,14 @@
         }
         .input-field {
             flex: 1;
+        }
+        .coord-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .zone-input {
+            width: 80px;
         }
         button {
             padding: 10px 15px;
@@ -68,30 +87,47 @@
             font-weight: bold;
             color: #4285f4;
         }
+        #showInputsBtn {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            display: none;
+            background-color: #fff;
+            border: 2px solid #4285f4;
+            color: #4285f4;
+        }
+        .help-text {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 2px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="inputs">
-            <h2>Satellite Location Transition</h2>
+        <div class="inputs" id="inputsSection">
+            <h2>UTM Satellite Location Transition</h2>
             <div class="input-group">
                 <div class="input-field">
-                    <label for="lat1">Starting Latitude:</label>
-                    <input type="text" id="lat1" placeholder="e.g. 48.8584" value="48.8584">
-                </div>
-                <div class="input-field">
-                    <label for="lng1">Starting Longitude:</label>
-                    <input type="text" id="lng1" placeholder="e.g. 2.2945" value="2.2945">
+                    <label for="utm1">Starting UTM Coordinate:</label>
+                    <div class="coord-group">
+                        <input type="text" id="zone1" class="zone-input" placeholder="36N" value="36N" maxlength="3">
+                        <input type="text" id="easting1" placeholder="e.g. 789567" value="714500">
+                        <input type="text" id="northing1" placeholder="e.g. 3735467" value="3533000">
+                    </div>
+                    <div class="help-text">Format: Zone+Hemisphere (e.g., 36N), Easting, Northing</div>
                 </div>
             </div>
             <div class="input-group">
                 <div class="input-field">
-                    <label for="lat2">Ending Latitude:</label>
-                    <input type="text" id="lat2" placeholder="e.g. 40.7128" value="40.7128">
-                </div>
-                <div class="input-field">
-                    <label for="lng2">Ending Longitude:</label>
-                    <input type="text" id="lng2" placeholder="e.g. -74.0060" value="-74.0060">
+                    <label for="utm2">Ending UTM Coordinate:</label>
+                    <div class="coord-group">
+                        <input type="text" id="zone2" class="zone-input" placeholder="36N" value="36N" maxlength="3">
+                        <input type="text" id="easting2" placeholder="e.g. 789567" value="714500">
+                        <input type="text" id="northing2" placeholder="e.g. 3735467" value="3563000">
+                    </div>
+                    <div class="help-text">Format: Zone+Hemisphere (e.g., 36N), Easting, Northing</div>
                 </div>
             </div>
             <div class="controls">
@@ -100,7 +136,8 @@
                 <button id="recordBtn">Record & Save Animation</button>
             </div>
         </div>
-        <div class="status" id="status">Enter coordinates and click "Start Animation"</div>
+        <button id="showInputsBtn">Show Inputs</button>
+        <div class="status" id="status">Enter UTM coordinates and click "Start Animation"</div>
         <div class="map-container">
             <div id="map"></div>
         </div>
@@ -126,39 +163,108 @@
         // Default markers
         let marker1 = null;
         let marker2 = null;
+        let animationInProgress = false;
         
         // Get DOM elements
         const startBtn = document.getElementById('startBtn');
         const resetBtn = document.getElementById('resetBtn');
         const recordBtn = document.getElementById('recordBtn');
         const statusEl = document.getElementById('status');
+        const inputsSection = document.getElementById('inputsSection');
+        const showInputsBtn = document.getElementById('showInputsBtn');
+        
+        // Set up all UTM zone definitions
+        for (let i = 1; i <= 60; i++) {
+            proj4.defs(`EPSG:326${i}`, `+proj=utm +zone=${i} +datum=WGS84 +units=m +no_defs +north`);  // Northern hemisphere
+            proj4.defs(`EPSG:327${i}`, `+proj=utm +zone=${i} +datum=WGS84 +units=m +no_defs +south`);  // Southern hemisphere
+        }
+        
+        // Parse UTM zone and hemisphere
+        function parseZone(zoneText) {
+            if (!zoneText) return null;
+            
+            // Extract zone number and hemisphere
+            const match = zoneText.match(/^(\d{1,2})([N|S])$/i);
+            if (!match) return null;
+            
+            const zoneNumber = parseInt(match[1]);
+            const hemisphere = match[2].toUpperCase();
+            
+            if (zoneNumber < 1 || zoneNumber > 60) return null;
+            
+            return { zoneNumber, hemisphere };
+        }
+        
+        // Function to convert UTM to LatLng
+        function utmToLatLng(easting, northing, zoneText) {
+            const zone = parseZone(zoneText);
+            if (!zone) {
+                throw new Error("Invalid zone format. Please use format like '36N'");
+            }
+            
+            const { zoneNumber, hemisphere } = zone;
+            
+            // Select the correct projection based on hemisphere
+            const epsg = hemisphere === 'N' ? `EPSG:326${zoneNumber}` : `EPSG:327${zoneNumber}`;
+            const wgs84 = '+proj=longlat +datum=WGS84 +no_defs';
+            
+            const result = proj4(epsg, wgs84, [easting, northing]);
+            return { lat: result[1], lng: result[0] };
+        }
         
         // Function to validate coordinates
         function validateCoords() {
-            const lat1 = parseFloat(document.getElementById('lat1').value);
-            const lng1 = parseFloat(document.getElementById('lng1').value);
-            const lat2 = parseFloat(document.getElementById('lat2').value);
-            const lng2 = parseFloat(document.getElementById('lng2').value);
+            const zone1 = document.getElementById('zone1').value.trim().toUpperCase();
+            const zone2 = document.getElementById('zone2').value.trim().toUpperCase();
             
-            if (isNaN(lat1) || isNaN(lng1) || isNaN(lat2) || isNaN(lng2)) {
-                statusEl.textContent = "Please enter valid coordinates";
+            // Check if zone format is valid
+            if (!parseZone(zone1) || !parseZone(zone2)) {
+                statusEl.textContent = "Please enter valid zone format (e.g., 36N)";
                 statusEl.style.color = "red";
                 return null;
             }
             
-            if (lat1 < -90 || lat1 > 90 || lat2 < -90 || lat2 > 90) {
-                statusEl.textContent = "Latitude must be between -90 and 90";
+            const easting1Value = document.getElementById('easting1').value.trim();
+            const northing1Value = document.getElementById('northing1').value.trim();
+            const easting2Value = document.getElementById('easting2').value.trim();
+            const northing2Value = document.getElementById('northing2').value.trim();
+            
+            // Check if coordinates are valid numbers
+            const easting1 = parseInt(easting1Value);
+            const northing1 = parseInt(northing1Value);
+            const easting2 = parseInt(easting2Value);
+            const northing2 = parseInt(northing2Value);
+            
+            if (isNaN(easting1) || isNaN(northing1) || isNaN(easting2) || isNaN(northing2)) {
+                statusEl.textContent = "Please enter valid UTM coordinates";
                 statusEl.style.color = "red";
                 return null;
             }
             
-            if (lng1 < -180 || lng1 > 180 || lng2 < -180 || lng2 > 180) {
-                statusEl.textContent = "Longitude must be between -180 and 180";
+            // Validate coordinate ranges
+            if (easting1 < 100000 || easting1 > 999999 || 
+                easting2 < 100000 || easting2 > 999999) {
+                statusEl.textContent = "Easting should be between 100000 and 999999";
                 statusEl.style.color = "red";
                 return null;
             }
             
-            return { lat1, lng1, lat2, lng2 };
+            try {
+                // Convert UTM coordinates to lat/lng
+                const coord1 = utmToLatLng(easting1, northing1, zone1);
+                const coord2 = utmToLatLng(easting2, northing2, zone2);
+                
+                return { 
+                    zone1, easting1, northing1, 
+                    zone2, easting2, northing2,
+                    lat1: coord1.lat, lng1: coord1.lng, 
+                    lat2: coord2.lat, lng2: coord2.lng 
+                };
+            } catch (error) {
+                statusEl.textContent = "Conversion error: " + error.message;
+                statusEl.style.color = "red";
+                return null;
+            }
         }
         
         // Function to update the map
@@ -187,6 +293,18 @@
             statusEl.style.color = "#4285f4";
         }
         
+        // Hide inputs section
+        function hideInputs() {
+            inputsSection.classList.add('hidden');
+            showInputsBtn.style.display = 'block';
+        }
+        
+        // Show inputs section
+        function showInputs() {
+            inputsSection.classList.remove('hidden');
+            showInputsBtn.style.display = 'none';
+        }
+        
         // Animation function
         async function animateTransition() {
             const coords = validateCoords();
@@ -194,6 +312,10 @@
             
             const { lat1, lng1, lat2, lng2 } = coords;
             startBtn.disabled = true;
+            animationInProgress = true;
+            
+            // Hide inputs before starting animation
+            hideInputs();
             
             try {
                 // Step 1: Zoom in to first location
@@ -203,13 +325,13 @@
                 
                 // Step 2: Zoom out partially (not completely)
                 statusEl.textContent = "Zooming out partially...";
-                await smoothFlyTo([lat1, lng1], 12, 2000); // Higher zoom level (12 instead of 5)
+                await smoothFlyTo([lat1, lng1], 13, 2000); // Higher zoom level (12 instead of 5)
                 await new Promise(resolve => setTimeout(resolve, 500));
                 
                 // Step 3: Pan to second location
                 statusEl.textContent = "Panning to second location...";
-                await smoothFlyTo([(lat1 + lat2) / 2, (lng1 + lng2) / 2], 10, 2000); // Maintain higher zoom during transition
-                await smoothFlyTo([lat2, lng2], 12, 2000);
+                await smoothFlyTo([(lat1 + lat2) / 2, (lng1 + lng2) / 2], 13, 2000); // Maintain higher zoom during transition
+                await smoothFlyTo([lat2, lng2], 16, 2000);
                 await new Promise(resolve => setTimeout(resolve, 500));
                 
                 // Step 4: Zoom in to second location
@@ -218,11 +340,15 @@
                 await new Promise(resolve => setTimeout(resolve, 1000));
                 
                 statusEl.textContent = "Animation complete!";
+                // Show inputs after animation completes
+                showInputs();
             } catch (error) {
                 statusEl.textContent = "Animation error: " + error.message;
                 statusEl.style.color = "red";
+                showInputs();
             } finally {
                 startBtn.disabled = false;
+                animationInProgress = false;
             }
         }
         
@@ -278,6 +404,11 @@
                     recording = false;
                     recordBtn.textContent = "Record & Save Animation";
                     statusEl.textContent = "Recording saved!";
+                    
+                    // Show inputs after recording is done
+                    if (!animationInProgress) {
+                        showInputs();
+                    }
                 };
                 
                 mediaRecorder.start();
@@ -325,10 +456,27 @@
         startBtn.addEventListener('click', animateTransition);
         resetBtn.addEventListener('click', () => {
             map.setView([0, 0], 2);
+            // Update the map with current input values when resetting
+            updateMap();
             statusEl.textContent = "Map reset. Enter coordinates and click 'Start Animation'.";
             statusEl.style.color = "#4285f4";
         });
         recordBtn.addEventListener('click', recordAndAnimate);
+        showInputsBtn.addEventListener('click', showInputs);
+        
+        // Listen for input changes and update the map automatically
+        const inputElements = [
+            document.getElementById('zone1'),
+            document.getElementById('easting1'),
+            document.getElementById('northing1'),
+            document.getElementById('zone2'),
+            document.getElementById('easting2'),
+            document.getElementById('northing2')
+        ];
+        
+        inputElements.forEach(input => {
+            input.addEventListener('change', updateMap);
+        });
         
         // Initialize the map with default values
         updateMap();
