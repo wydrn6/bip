@@ -325,14 +325,14 @@
                 
                 // Step 2: Zoom out partially (not completely)
                 statusEl.textContent = "Zooming out partially...";
-                await smoothFlyTo([lat1, lng1], 13, 2000); // Higher zoom level (12 instead of 5)
+                await smoothFlyTo([lat1, lng1], 16, 2000); // Higher zoom level (12 instead of 5)
                 await new Promise(resolve => setTimeout(resolve, 500));
                 
                 // Step 3: Pan to second location
-                statusEl.textContent = "Panning to second location...";
-                await smoothFlyTo([(lat1 + lat2) / 2, (lng1 + lng2) / 2], 13, 2000); // Maintain higher zoom during transition
-                await smoothFlyTo([lat2, lng2], 16, 2000);
-                await new Promise(resolve => setTimeout(resolve, 500));
+                //statusEl.textContent = "Panning to second location...";
+                //await smoothFlyTo([(lat1 + lat2) / 2, (lng1 + lng2) / 2], 13, 2000); // Maintain higher zoom during transition
+                //await smoothFlyTo([lat2, lng2], 16, 2000);
+                //await new Promise(resolve => setTimeout(resolve, 500));
                 
                 // Step 4: Zoom in to second location
                 statusEl.textContent = "Zooming in to second location...";
