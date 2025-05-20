@@ -1,485 +1,282 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>UTM Satellite Location Transition</title>
+    <title>Satellite Map Fly-Through</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
     <style>
-        body, html {
+        body {
             margin: 0;
             padding: 0;
-            height: 100%;
             font-family: Arial, sans-serif;
-        }
-        .container {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-        }
-        .inputs {
-            padding: 15px;
-            background-color: #f0f0f0;
-            border-bottom: 1px solid #ccc;
-            transition: max-height 0.5s ease, opacity 0.5s ease, padding 0.5s ease;
-            max-height: 300px;
-            opacity: 1;
+            touch-action: manipulation;
             overflow: hidden;
         }
-        .inputs.hidden {
-            max-height: 0;
-            opacity: 0;
-            padding: 0;
-            border-bottom: none;
-        }
-        .map-container {
-            flex-grow: 1;
-            position: relative;
-        }
         #map {
-            height: 100%;
             width: 100%;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
         }
-        .input-group {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-        .input-field {
-            flex: 1;
-        }
-        .coord-group {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-        .zone-input {
-            width: 80px;
-        }
-        button {
-            padding: 10px 15px;
-            background-color: #4285f4;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-        button:hover {
-            background-color: #3367d6;
-        }
-        #recordBtn {
-            background-color: #ea4335;
-        }
-        #recordBtn:hover {
-            background-color: #d33426;
-        }
-        .controls {
-            margin-top: 10px;
-            display: flex;
-            gap: 10px;
-        }
-        .status {
-            padding: 10px;
-            text-align: center;
-            font-weight: bold;
-            color: #4285f4;
-        }
-        #showInputsBtn {
+        .info-panel {
             position: absolute;
             top: 10px;
-            left: 10px;
+            right: 10px;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
             z-index: 1000;
-            display: none;
-            background-color: #fff;
-            border: 2px solid #4285f4;
-            color: #4285f4;
+            max-width: 200px;
         }
-        .help-text {
-            font-size: 0.85em;
-            color: #666;
-            margin-top: 2px;
+        .fly-button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 10px 0;
+            cursor: pointer;
+            border-radius: 5px;
+            width: 100%;
+            display: none;
+        }
+        .reset-button {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 5px 0;
+            cursor: pointer;
+            border-radius: 5px;
+            width: 100%;
+        }
+        
+        /* Mobile landscape optimizations */
+        @media screen and (max-width: 896px) and (orientation: landscape) {
+            .info-panel {
+                top: 5px;
+                right: 5px;
+                padding: 5px;
+                max-width: 150px;
+            }
+            .fly-button, .reset-button {
+                padding: 8px 12px;
+                font-size: 14px;
+                margin: 3px 0;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="inputs" id="inputsSection">
-            <h2>UTM Satellite Location Transition</h2>
-            <div class="input-group">
-                <div class="input-field">
-                    <label for="utm1">Starting UTM Coordinate:</label>
-                    <div class="coord-group">
-                        <input type="text" id="zone1" class="zone-input" placeholder="36N" value="36N" maxlength="3">
-                        <input type="text" id="easting1" placeholder="e.g. 789567" value="714500">
-                        <input type="text" id="northing1" placeholder="e.g. 3735467" value="3533000">
-                    </div>
-                    <div class="help-text">Format: Zone+Hemisphere (e.g., 36N), Easting, Northing</div>
-                </div>
-            </div>
-            <div class="input-group">
-                <div class="input-field">
-                    <label for="utm2">Ending UTM Coordinate:</label>
-                    <div class="coord-group">
-                        <input type="text" id="zone2" class="zone-input" placeholder="36N" value="36N" maxlength="3">
-                        <input type="text" id="easting2" placeholder="e.g. 789567" value="714500">
-                        <input type="text" id="northing2" placeholder="e.g. 3735467" value="3563000">
-                    </div>
-                    <div class="help-text">Format: Zone+Hemisphere (e.g., 36N), Easting, Northing</div>
-                </div>
-            </div>
-            <div class="controls">
-                <button id="startBtn">Start Animation</button>
-                <button id="resetBtn">Reset Map</button>
-                <button id="recordBtn">Record & Save Animation</button>
-            </div>
-        </div>
-        <button id="showInputsBtn">Show Inputs</button>
-        <div class="status" id="status">Enter UTM coordinates and click "Start Animation"</div>
-        <div class="map-container">
-            <div id="map"></div>
-        </div>
+    <div id="map"></div>
+    <div class="info-panel">
+        <button id="flyButton" class="fly-button">Start Fly-Through</button>
+        <button id="resetButton" class="reset-button">Reset Points</button>
     </div>
 
     <script>
-        // Add MediaRecorder API support
-        const mimeType = 'video/webm';
-        let mediaRecorder;
-        let recordedChunks = [];
-        let recording = false;
+        // On page load, check if we need to lock to landscape
+        window.addEventListener('load', function() {
+            checkOrientation();
+        });
         
-        // Initialize the map
-        const map = L.map('map').setView([0, 0], 2);
+        // Check orientation on resize
+        window.addEventListener('resize', function() {
+            checkOrientation();
+        });
         
-        // Add satellite tile layer
-        L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-            maxZoom: 20,
-            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-            attribution: '&copy; Google Maps'
+        // Function to handle orientation
+        function checkOrientation() {
+            // Recalculate map size whenever orientation changes
+            if (map) {
+                map.invalidateSize();
+            }
+        }
+        
+        // Initialize map centered on the West Bank
+        const map = L.map('map').setView([31.9465, 35.3027], 9);
+
+        // Add satellite layer
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+            maxZoom: 20
         }).addTo(map);
         
-        // Default markers
-        let marker1 = null;
-        let marker2 = null;
-        let animationInProgress = false;
-        
-        // Get DOM elements
-        const startBtn = document.getElementById('startBtn');
-        const resetBtn = document.getElementById('resetBtn');
-        const recordBtn = document.getElementById('recordBtn');
-        const statusEl = document.getElementById('status');
-        const inputsSection = document.getElementById('inputsSection');
-        const showInputsBtn = document.getElementById('showInputsBtn');
-        
-        // Set up all UTM zone definitions
-        for (let i = 1; i <= 60; i++) {
-            proj4.defs(`EPSG:326${i}`, `+proj=utm +zone=${i} +datum=WGS84 +units=m +no_defs +north`);  // Northern hemisphere
-            proj4.defs(`EPSG:327${i}`, `+proj=utm +zone=${i} +datum=WGS84 +units=m +no_defs +south`);  // Southern hemisphere
-        }
-        
-        // Parse UTM zone and hemisphere
-        function parseZone(zoneText) {
-            if (!zoneText) return null;
-            
-            // Extract zone number and hemisphere
-            const match = zoneText.match(/^(\d{1,2})([N|S])$/i);
-            if (!match) return null;
-            
-            const zoneNumber = parseInt(match[1]);
-            const hemisphere = match[2].toUpperCase();
-            
-            if (zoneNumber < 1 || zoneNumber > 60) return null;
-            
-            return { zoneNumber, hemisphere };
-        }
-        
-        // Function to convert UTM to LatLng
-        function utmToLatLng(easting, northing, zoneText) {
-            const zone = parseZone(zoneText);
-            if (!zone) {
-                throw new Error("Invalid zone format. Please use format like '36N'");
-            }
-            
-            const { zoneNumber, hemisphere } = zone;
-            
-            // Select the correct projection based on hemisphere
-            const epsg = hemisphere === 'N' ? `EPSG:326${zoneNumber}` : `EPSG:327${zoneNumber}`;
-            const wgs84 = '+proj=longlat +datum=WGS84 +no_defs';
-            
-            const result = proj4(epsg, wgs84, [easting, northing]);
-            return { lat: result[1], lng: result[0] };
-        }
-        
-        // Function to validate coordinates
-        function validateCoords() {
-            const zone1 = document.getElementById('zone1').value.trim().toUpperCase();
-            const zone2 = document.getElementById('zone2').value.trim().toUpperCase();
-            
-            // Check if zone format is valid
-            if (!parseZone(zone1) || !parseZone(zone2)) {
-                statusEl.textContent = "Please enter valid zone format (e.g., 36N)";
-                statusEl.style.color = "red";
-                return null;
-            }
-            
-            const easting1Value = document.getElementById('easting1').value.trim();
-            const northing1Value = document.getElementById('northing1').value.trim();
-            const easting2Value = document.getElementById('easting2').value.trim();
-            const northing2Value = document.getElementById('northing2').value.trim();
-            
-            // Check if coordinates are valid numbers
-            const easting1 = parseInt(easting1Value);
-            const northing1 = parseInt(northing1Value);
-            const easting2 = parseInt(easting2Value);
-            const northing2 = parseInt(northing2Value);
-            
-            if (isNaN(easting1) || isNaN(northing1) || isNaN(easting2) || isNaN(northing2)) {
-                statusEl.textContent = "Please enter valid UTM coordinates";
-                statusEl.style.color = "red";
-                return null;
-            }
-            
-            // Validate coordinate ranges
-            if (easting1 < 100000 || easting1 > 999999 || 
-                easting2 < 100000 || easting2 > 999999) {
-                statusEl.textContent = "Easting should be between 100000 and 999999";
-                statusEl.style.color = "red";
-                return null;
-            }
-            
-            try {
-                // Convert UTM coordinates to lat/lng
-                const coord1 = utmToLatLng(easting1, northing1, zone1);
-                const coord2 = utmToLatLng(easting2, northing2, zone2);
+        // Add labels/place names layer
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 20
+        }).addTo(map);
+
+        // Variables to store selected points
+        let points = [];
+        let markers = [];
+        const flyButton = document.getElementById('flyButton');
+        const resetButton = document.getElementById('resetButton');
+
+        // Handle map clicks
+        map.on('click', function(e) {
+            // Only allow two points to be selected
+            if (points.length < 2) {
+                const lat = e.latlng.lat.toFixed(4);
+                const lng = e.latlng.lng.toFixed(4);
                 
-                return { 
-                    zone1, easting1, northing1, 
-                    zone2, easting2, northing2,
-                    lat1: coord1.lat, lng1: coord1.lng, 
-                    lat2: coord2.lat, lng2: coord2.lng 
-                };
-            } catch (error) {
-                statusEl.textContent = "Conversion error: " + error.message;
-                statusEl.style.color = "red";
-                return null;
+                // Create a custom icon for the marker
+                const markerIcon = L.divIcon({
+                    html: points.length === 0 ? 
+                        `<div style="position: relative;">
+                            <div style="background-color: #ff6b6b; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>
+                            <div style="position: absolute; top: -25px; left: -15px; color: white; font-weight: bold; text-shadow: 1px 1px 2px black; font-size: 18px;">אמנ"ח</div>
+                         </div>` :
+                        `<div style="background-color: #4ecdc4; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+                    className: 'custom-marker',
+                    iconSize: points.length === 0 ? [36, 36] : [16, 16],
+                    iconAnchor: points.length === 0 ? [18, 18] : [8, 8]
+                });
+                
+                // Add marker to map
+                const marker = L.marker([lat, lng], { icon: markerIcon }).addTo(map);
+                markers.push(marker);
+                
+                // Save point
+                points.push({
+                    lat: parseFloat(lat),
+                    lng: parseFloat(lng)
+                });
+                
+                // Update UI
+                updateLocationText();
+                
+                // Show fly button if two points are selected
+                if (points.length === 2) {
+                    flyButton.style.display = 'block';
+                }
             }
+        });
+
+        // Update location text
+        function updateLocationText() {
+            // Function kept for compatibility but no longer displays text
         }
-        
-        // Function to update the map
-        function updateMap() {
-            const coords = validateCoords();
-            if (!coords) return;
+
+        // Reset all points and markers
+        function resetPoints() {
+            // Remove all markers from the map
+            markers.forEach(marker => map.removeLayer(marker));
             
-            const { lat1, lng1, lat2, lng2 } = coords;
+            // Clear arrays
+            markers = [];
+            points = [];
             
-            // Remove existing markers
-            if (marker1) map.removeLayer(marker1);
-            if (marker2) map.removeLayer(marker2);
-            
-            // Add new markers
-            marker1 = L.marker([lat1, lng1]).addTo(map).bindPopup('Starting Location').openPopup();
-            marker2 = L.marker([lat2, lng2]).addTo(map).bindPopup('Ending Location');
-            
-            // Fit bounds to see both markers
-            const bounds = L.latLngBounds([
-                [lat1, lng1],
-                [lat2, lng2]
-            ]);
-            map.fitBounds(bounds, { padding: [50, 50] });
-            
-            statusEl.textContent = "Map updated. Click 'Start Animation' to begin.";
-            statusEl.style.color = "#4285f4";
+            // Update UI
+            flyButton.style.display = 'none';
         }
-        
-        // Hide inputs section
-        function hideInputs() {
-            inputsSection.classList.add('hidden');
-            showInputsBtn.style.display = 'block';
-        }
-        
-        // Show inputs section
-        function showInputs() {
-            inputsSection.classList.remove('hidden');
-            showInputsBtn.style.display = 'none';
-        }
-        
-        // Animation function
-        async function animateTransition() {
-            const coords = validateCoords();
-            if (!coords) return;
+
+        // Calculate appropriate zoom level based on distance
+        function calculateZoomLevel(pointA, pointB) {
+            // Calculate distance between points (rough approximation)
+            const lat1 = pointA.lat * Math.PI / 180;
+            const lat2 = pointB.lat * Math.PI / 180;
+            const lon1 = pointA.lng * Math.PI / 180;
+            const lon2 = pointB.lng * Math.PI / 180;
             
-            const { lat1, lng1, lat2, lng2 } = coords;
-            startBtn.disabled = true;
-            animationInProgress = true;
+            // Haversine formula to calculate distance
+            const R = 6371; // Radius of the Earth in km
+            const dLat = lat2 - lat1;
+            const dLon = lon2 - lon1;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(lat1) * Math.cos(lat2) * 
+                    Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            const distance = R * c;
             
-            // Hide inputs before starting animation
-            hideInputs();
-            
-            try {
-                // Step 1: Zoom in to first location
-                statusEl.textContent = "Zooming in to first location...";
-                await smoothFlyTo([lat1, lng1], 18, 3000);
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                
-                // Step 2: Zoom out partially (not completely)
-                statusEl.textContent = "Zooming out partially...";
-                await smoothFlyTo([lat1, lng1], 16, 2000); // Higher zoom level (12 instead of 5)
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
-                // Step 3: Pan to second location
-                //statusEl.textContent = "Panning to second location...";
-                //await smoothFlyTo([(lat1 + lat2) / 2, (lng1 + lng2) / 2], 13, 2000); // Maintain higher zoom during transition
-                //await smoothFlyTo([lat2, lng2], 16, 2000);
-                //await new Promise(resolve => setTimeout(resolve, 500));
-                
-                // Step 4: Zoom in to second location
-                statusEl.textContent = "Zooming in to second location...";
-                await smoothFlyTo([lat2, lng2], 18, 3000);
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                
-                statusEl.textContent = "Animation complete!";
-                // Show inputs after animation completes
-                showInputs();
-            } catch (error) {
-                statusEl.textContent = "Animation error: " + error.message;
-                statusEl.style.color = "red";
-                showInputs();
-            } finally {
-                startBtn.disabled = false;
-                animationInProgress = false;
-            }
+        // Map distance to zoom level (adjust these values as needed)
+        if (distance > 10000) return 1;
+            if (distance > 5000) return 2;
+            if (distance > 2000) return 3;
+            if (distance > 1000) return 4;
+            if (distance > 500) return 5;
+            if (distance > 200) return 6;
+            if (distance > 100) return 7;
+            if (distance > 50) return 8;
+            if (distance > 20) return 9;
+            if (distance > 10) return 10;
+            if (distance > 5) return 15;
+            if (distance > 2) return 16;
+            if (distance > 1) return 17;
+            if (distance > 0.5) return 18;
+            if (distance > 0.2) return 19;
+            return 20;
         }
-        
-        // Smooth fly-to function
-        function smoothFlyTo(latlng, zoom, duration) {
-            return new Promise(resolve => {
-                map.flyTo(latlng, zoom, {
-                    duration: duration / 1000,
+
+        // Start fly-through animation
+        function startFlyThrough() {
+            if (points.length !== 2) return;
+            
+            // Disable buttons during animation
+            flyButton.style.display = 'none';
+            resetButton.style.display = 'none';
+            
+            // Calculate appropriate zoom levels
+            const startZoom = map.getZoom();
+            const midZoom = calculateZoomLevel(points[0], points[1]) - 1; // Zoom out a bit for the journey
+            const endZoom = map.getZoom();
+            
+            // Fly to first point (if not already there)
+            map.flyTo([points[0].lat, points[0].lng], startZoom, {
+                duration: 1,
+                easeLinearity: 0.5,
+                noMoveStart: true
+            });
+            
+            // After a short delay, start the main fly animation
+            setTimeout(() => {
+                // First zoom out
+                map.flyTo([points[0].lat, points[0].lng], midZoom, {
+                    duration: 1.5,
                     easeLinearity: 0.5
                 });
                 
-                setTimeout(resolve, duration);
-            });
-        }
-        
-        // Start recording function
-        async function startRecording() {
-            try {
-                const stream = await navigator.mediaDevices.getDisplayMedia({
-                    video: { 
-                        mediaSource: "screen",
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
-                        frameRate: { ideal: 30 }
-                    }
-                });
-                
-                recordedChunks = [];
-                mediaRecorder = new MediaRecorder(stream, { mimeType });
-                
-                mediaRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0) {
-                        recordedChunks.push(event.data);
-                    }
-                };
-                
-                mediaRecorder.onstop = () => {
-                    const blob = new Blob(recordedChunks, { type: mimeType });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.style.display = 'none';
-                    a.href = url;
-                    a.download = 'satellite-transition.webm';
-                    document.body.appendChild(a);
-                    a.click();
-                    setTimeout(() => {
-                        document.body.removeChild(a);
-                        window.URL.revokeObjectURL(url);
-                    }, 100);
-                    
-                    // Stop all tracks
-                    stream.getTracks().forEach(track => track.stop());
-                    recording = false;
-                    recordBtn.textContent = "Record & Save Animation";
-                    statusEl.textContent = "Recording saved!";
-                    
-                    // Show inputs after recording is done
-                    if (!animationInProgress) {
-                        showInputs();
-                    }
-                };
-                
-                mediaRecorder.start();
-                recording = true;
-                recordBtn.textContent = "Stop Recording";
-                statusEl.textContent = "Recording... Please crop to this browser window in the screen selection dialog";
-                
-                return true;
-            } catch (error) {
-                statusEl.textContent = "Recording error: " + error.message;
-                statusEl.style.color = "red";
-                return false;
-            }
-        }
-        
-        // Record and animate function
-        async function recordAndAnimate() {
-            if (recording) {
-                // Stop recording
-                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                    mediaRecorder.stop();
-                }
-                return;
-            }
-            
-            // Start recording first
-            const success = await startRecording();
-            if (success) {
-                // Give user time to select the screen area
+                // Then fly to the destination
                 setTimeout(() => {
-                    // Then start the animation
-                    animateTransition().then(() => {
-                        // Stop recording automatically after animation completes
-                        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                            setTimeout(() => {
-                                mediaRecorder.stop();
-                            }, 1000); // Give an extra second at the end
-                        }
+                    map.flyTo([points[1].lat, points[1].lng], midZoom, {
+                        duration: 3,
+                        easeLinearity: 0.3
                     });
+                    
+                    // Then zoom back in at destination
+                    setTimeout(() => {
+                        map.flyTo([points[1].lat, points[1].lng], endZoom, {
+                            duration: 1.5,
+                            easeLinearity: 0.5
+                        });
+                        
+                        // Re-enable buttons
+                        setTimeout(() => {
+                            flyButton.style.display = 'block';
+                            resetButton.style.display = 'block';
+                        }, 1500);
+                    }, 3000);
                 }, 1500);
-            }
+            }, 1000);
         }
-        
+
         // Event listeners
-        startBtn.addEventListener('click', animateTransition);
-        resetBtn.addEventListener('click', () => {
-            map.setView([0, 0], 2);
-            // Update the map with current input values when resetting
-            updateMap();
-            statusEl.textContent = "Map reset. Enter coordinates and click 'Start Animation'.";
-            statusEl.style.color = "#4285f4";
-        });
-        recordBtn.addEventListener('click', recordAndAnimate);
-        showInputsBtn.addEventListener('click', showInputs);
-        
-        // Listen for input changes and update the map automatically
-        const inputElements = [
-            document.getElementById('zone1'),
-            document.getElementById('easting1'),
-            document.getElementById('northing1'),
-            document.getElementById('zone2'),
-            document.getElementById('easting2'),
-            document.getElementById('northing2')
-        ];
-        
-        inputElements.forEach(input => {
-            input.addEventListener('change', updateMap);
-        });
-        
-        // Initialize the map with default values
-        updateMap();
+        flyButton.addEventListener('click', startFlyThrough);
+        resetButton.addEventListener('click', resetPoints);
+
+        // Initial setup
+        resetPoints();
     </script>
 </body>
 </html>
