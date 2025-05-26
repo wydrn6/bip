@@ -1,282 +1,238 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Satellite Map Fly-Through</title>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map with Auto Preloading</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body {
             margin: 0;
             padding: 0;
             font-family: Arial, sans-serif;
-            touch-action: manipulation;
-            overflow: hidden;
         }
+
         #map {
-            width: 100%;
             height: 100vh;
-            position: absolute;
-            top: 0;
-            left: 0;
+            width: 100%;
         }
-        .info-panel {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background-color: rgba(255, 255, 255, 0.8);
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+
+        .loading-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
             z-index: 1000;
-            max-width: 200px;
-        }
-        .fly-button {
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            padding: 10px 15px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            font-size: 16px;
-            margin: 10px 0;
-            cursor: pointer;
-            border-radius: 5px;
-            width: 100%;
             display: none;
+            opacity: 0;
+            transition: opacity 0.3s;
         }
-        .reset-button {
-            background-color: #f44336;
-            color: white;
-            border: none;
-            padding: 10px 15px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            font-size: 16px;
-            margin: 5px 0;
-            cursor: pointer;
-            border-radius: 5px;
-            width: 100%;
-        }
-        
-        /* Mobile landscape optimizations */
-        @media screen and (max-width: 896px) and (orientation: landscape) {
-            .info-panel {
-                top: 5px;
-                right: 5px;
-                padding: 5px;
-                max-width: 150px;
-            }
-            .fly-button, .reset-button {
-                padding: 8px 12px;
-                font-size: 14px;
-                margin: 3px 0;
-            }
+
+        .loading-indicator.show {
+            display: block;
+            opacity: 1;
         }
     </style>
 </head>
 <body>
     <div id="map"></div>
-    <div class="info-panel">
-        <button id="flyButton" class="fly-button">Start Fly-Through</button>
-        <button id="resetButton" class="reset-button">Reset Points</button>
-    </div>
+    <div class="loading-indicator" id="loadingIndicator">Preloading...</div>
 
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // On page load, check if we need to lock to landscape
-        window.addEventListener('load', function() {
-            checkOrientation();
-        });
-        
-        // Check orientation on resize
-        window.addEventListener('resize', function() {
-            checkOrientation();
-        });
-        
-        // Function to handle orientation
-        function checkOrientation() {
-            // Recalculate map size whenever orientation changes
-            if (map) {
-                map.invalidateSize();
+        class AutoTilePreloader {
+            constructor(map) {
+                this.map = map;
+                this.tileCache = new Map();
+                this.loadingTiles = new Set();
+                this.isPreloading = false;
+                
+                // Optimal settings - no need for user to configure
+                this.preloadRadius = 3;      // 3 tiles in each direction
+                this.preloadZoomLevels = 1;  // Current zoom + 1 level up/down
+                this.maxCacheSize = 400;     // Keep 400 tiles max
+                this.batchSize = 8;          // Load 8 tiles at once
+                
+                this.init();
             }
-        }
-        
-        // Initialize map centered on the West Bank
-        const map = L.map('map').setView([31.9465, 35.3027], 9);
-
-        // Add satellite layer
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
-            maxZoom: 20
-        }).addTo(map);
-        
-        // Add labels/place names layer
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
-            maxZoom: 20
-        }).addTo(map);
-
-        // Variables to store selected points
-        let points = [];
-        let markers = [];
-        const flyButton = document.getElementById('flyButton');
-        const resetButton = document.getElementById('resetButton');
-
-        // Handle map clicks
-        map.on('click', function(e) {
-            // Only allow two points to be selected
-            if (points.length < 2) {
-                const lat = e.latlng.lat.toFixed(4);
-                const lng = e.latlng.lng.toFixed(4);
-                
-                // Create a custom icon for the marker
-                const markerIcon = L.divIcon({
-                    html: points.length === 0 ? 
-                        `<div style="position: relative;">
-                            <div style="background-color: #ff6b6b; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>
-                            <div style="position: absolute; top: -25px; left: -15px; color: white; font-weight: bold; text-shadow: 1px 1px 2px black; font-size: 18px;">המנ"ח</div>
-                         </div>` :
-                        `<div style="background-color: #4ecdc4; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
-                    className: 'custom-marker',
-                    iconSize: points.length === 0 ? [36, 36] : [16, 16],
-                    iconAnchor: points.length === 0 ? [18, 18] : [8, 8]
+            
+            init() {
+                // Preload on map movement with slight delay
+                this.map.on('moveend', () => {
+                    clearTimeout(this.preloadTimer);
+                    this.preloadTimer = setTimeout(() => this.preloadArea(), 200);
                 });
                 
-                // Add marker to map
-                const marker = L.marker([lat, lng], { icon: markerIcon }).addTo(map);
-                markers.push(marker);
-                
-                // Save point
-                points.push({
-                    lat: parseFloat(lat),
-                    lng: parseFloat(lng)
+                this.map.on('zoomend', () => {
+                    clearTimeout(this.preloadTimer);
+                    this.preloadTimer = setTimeout(() => this.preloadArea(), 300);
                 });
                 
-                // Update UI
-                updateLocationText();
+                // Initial preload after map loads
+                this.map.whenReady(() => {
+                    setTimeout(() => this.preloadArea(), 500);
+                });
                 
-                // Show fly button if two points are selected
-                if (points.length === 2) {
-                    flyButton.style.display = 'block';
-                }
+                // Clean up cache every 30 seconds
+                setInterval(() => this.cleanupCache(), 30000);
             }
-        });
-
-        // Update location text
-        function updateLocationText() {
-            // Function kept for compatibility but no longer displays text
-        }
-
-        // Reset all points and markers
-        function resetPoints() {
-            // Remove all markers from the map
-            markers.forEach(marker => map.removeLayer(marker));
             
-            // Clear arrays
-            markers = [];
-            points = [];
-            
-            // Update UI
-            flyButton.style.display = 'none';
-        }
-
-        // Calculate appropriate zoom level based on distance
-        function calculateZoomLevel(pointA, pointB) {
-            // Calculate distance between points (rough approximation)
-            const lat1 = pointA.lat * Math.PI / 180;
-            const lat2 = pointB.lat * Math.PI / 180;
-            const lon1 = pointA.lng * Math.PI / 180;
-            const lon2 = pointB.lng * Math.PI / 180;
-            
-            // Haversine formula to calculate distance
-            const R = 6371; // Radius of the Earth in km
-            const dLat = lat2 - lat1;
-            const dLon = lon2 - lon1;
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                    Math.cos(lat1) * Math.cos(lat2) * 
-                    Math.sin(dLon/2) * Math.sin(dLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            const distance = R * c;
-            
-        // Map distance to zoom level (adjust these values as needed)
-        if (distance > 10000) return 1;
-            if (distance > 5000) return 2;
-            if (distance > 2000) return 3;
-            if (distance > 1000) return 4;
-            if (distance > 500) return 5;
-            if (distance > 200) return 6;
-            if (distance > 100) return 7;
-            if (distance > 50) return 8;
-            if (distance > 20) return 9;
-            if (distance > 10) return 10;
-            if (distance > 5) return 15;
-            if (distance > 2) return 16;
-            if (distance > 1) return 17;
-            if (distance > 0.5) return 18;
-            if (distance > 0.2) return 19;
-            return 20;
-        }
-
-        // Start fly-through animation
-        function startFlyThrough() {
-            if (points.length !== 2) return;
-            
-            // Disable buttons during animation
-            flyButton.style.display = 'none';
-            resetButton.style.display = 'none';
-            
-            // Calculate appropriate zoom levels
-            const startZoom = map.getZoom();
-            const midZoom = calculateZoomLevel(points[0], points[1]) - 1; // Zoom out a bit for the journey
-            const endZoom = map.getZoom();
-            
-            // Fly to first point (if not already there)
-            map.flyTo([points[0].lat, points[0].lng], startZoom, {
-                duration: 1,
-                easeLinearity: 0.5,
-                noMoveStart: true
-            });
-            
-            // After a short delay, start the main fly animation
-            setTimeout(() => {
-                // First zoom out
-                map.flyTo([points[0].lat, points[0].lng], midZoom, {
-                    duration: 1.5,
-                    easeLinearity: 0.5
-                });
+            async preloadArea() {
+                if (this.isPreloading) return;
                 
-                // Then fly to the destination
-                setTimeout(() => {
-                    map.flyTo([points[1].lat, points[1].lng], midZoom, {
-                        duration: 3,
-                        easeLinearity: 0.3
+                this.isPreloading = true;
+                this.showLoading();
+                
+                const zoom = this.map.getZoom();
+                const bounds = this.map.getBounds();
+                const tilesToLoad = [];
+                
+                // Get tiles for current zoom and one level up/down
+                for (let z = Math.max(1, zoom - 1); z <= Math.min(18, zoom + 1); z++) {
+                    const tiles = this.getTilesInArea(bounds, z);
+                    tiles.forEach(tile => {
+                        const key = `${tile.z}/${tile.x}/${tile.y}`;
+                        if (!this.tileCache.has(key) && !this.loadingTiles.has(key)) {
+                            // Priority: current zoom first, then closer tiles
+                            const priority = Math.abs(z - zoom) * 100 + tile.distance;
+                            tilesToLoad.push({ ...tile, key, priority });
+                        }
                     });
+                }
+                
+                // Sort by priority and load in batches
+                tilesToLoad.sort((a, b) => a.priority - b.priority);
+                
+                // Load tiles in small batches
+                for (let i = 0; i < tilesToLoad.length && i < 50; i += this.batchSize) {
+                    const batch = tilesToLoad.slice(i, i + this.batchSize);
+                    await Promise.all(batch.map(tile => this.loadTile(tile)));
                     
-                    // Then zoom back in at destination
-                    setTimeout(() => {
-                        map.flyTo([points[1].lat, points[1].lng], endZoom, {
-                            duration: 1.5,
-                            easeLinearity: 0.5
+                    // Small delay between batches
+                    if (i + this.batchSize < tilesToLoad.length) {
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                    }
+                }
+                
+                this.isPreloading = false;
+                this.hideLoading();
+            }
+            
+            getTilesInArea(bounds, zoom) {
+                const center = this.map.getCenter();
+                const centerTile = this.latLngToTile(center, zoom);
+                const tiles = [];
+                
+                // Get tiles in radius around center
+                for (let x = centerTile.x - this.preloadRadius; 
+                     x <= centerTile.x + this.preloadRadius; x++) {
+                    for (let y = centerTile.y - this.preloadRadius; 
+                         y <= centerTile.y + this.preloadRadius; y++) {
+                        
+                        if (x >= 0 && y >= 0 && x < Math.pow(2, zoom) && y < Math.pow(2, zoom)) {
+                            const distance = Math.sqrt(
+                                Math.pow(x - centerTile.x, 2) + Math.pow(y - centerTile.y, 2)
+                            );
+                            tiles.push({ x, y, z: zoom, distance });
+                        }
+                    }
+                }
+                
+                return tiles;
+            }
+            
+            async loadTile(tile) {
+                const { x, y, z, key } = tile;
+                this.loadingTiles.add(key);
+                
+                try {
+                    const url = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+                    const response = await fetch(url);
+                    
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        const imageUrl = URL.createObjectURL(blob);
+                        
+                        // Preload the image
+                        const img = new Image();
+                        await new Promise((resolve, reject) => {
+                            img.onload = resolve;
+                            img.onerror = reject;
+                            img.src = imageUrl;
                         });
                         
-                        // Re-enable buttons
-                        setTimeout(() => {
-                            flyButton.style.display = 'block';
-                            resetButton.style.display = 'block';
-                        }, 1500);
-                    }, 3000);
-                }, 1500);
-            }, 1000);
+                        this.tileCache.set(key, {
+                            url: imageUrl,
+                            timestamp: Date.now(),
+                            size: blob.size
+                        });
+                    }
+                } catch (error) {
+                    // Silently ignore failed tiles
+                } finally {
+                    this.loadingTiles.delete(key);
+                }
+            }
+            
+            latLngToTile(latlng, zoom) {
+                const lat = latlng.lat * Math.PI / 180;
+                const n = Math.pow(2, zoom);
+                const x = Math.floor((latlng.lng + 180) / 360 * n);
+                const y = Math.floor((1 - Math.asinh(Math.tan(lat)) / Math.PI) / 2 * n);
+                return { x, y };
+            }
+            
+            cleanupCache() {
+                if (this.tileCache.size <= this.maxCacheSize) return;
+                
+                // Remove oldest 30% of tiles
+                const entries = Array.from(this.tileCache.entries());
+                entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+                
+                const toRemove = Math.floor(this.tileCache.size * 0.3);
+                for (let i = 0; i < toRemove; i++) {
+                    const [key, tile] = entries[i];
+                    URL.revokeObjectURL(tile.url);
+                    this.tileCache.delete(key);
+                }
+            }
+            
+            showLoading() {
+                const indicator = document.getElementById('loadingIndicator');
+                indicator.classList.add('show');
+            }
+            
+            hideLoading() {
+                const indicator = document.getElementById('loadingIndicator');
+                indicator.classList.remove('show');
+            }
         }
-
-        // Event listeners
-        flyButton.addEventListener('click', startFlyThrough);
-        resetButton.addEventListener('click', resetPoints);
-
-        // Initial setup
-        resetPoints();
+        
+        // Initialize map
+        const map = L.map('map').setView([40.7128, -74.0060], 13);
+        
+        // Add tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 18
+        }).addTo(map);
+        
+        // Start auto preloading
+        new AutoTilePreloader(map);
+        
+        // Add some markers
+        L.marker([40.7128, -74.0060]).addTo(map)
+            .bindPopup('New York City');
+        
+        L.marker([40.7589, -73.9851]).addTo(map)
+            .bindPopup('Times Square');
+        
+        L.marker([40.6892, -74.0445]).addTo(map)
+            .bindPopup('Statue of Liberty');
     </script>
 </body>
 </html>
