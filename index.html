@@ -39,7 +39,6 @@
             padding: 10px 15px;
             text-align: center;
             text-decoration: none;
-            display: inline-block;
             font-size: 16px;
             margin: 10px 0;
             cursor: pointer;
@@ -53,16 +52,13 @@
             border: none;
             padding: 10px 15px;
             text-align: center;
-            text-decoration: none;
-            display: inline-block;
             font-size: 16px;
             margin: 5px 0;
             cursor: pointer;
             border-radius: 5px;
             width: 100%;
         }
-        
-        /* Mobile landscape optimizations */
+
         @media screen and (max-width: 896px) and (orientation: landscape) {
             .info-panel {
                 top: 5px;
@@ -76,135 +72,117 @@
                 margin: 3px 0;
             }
         }
+
+        /* Optional loading spinner */
+        /*
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-weight: bold;
+            display: none;
+            z-index: 2000;
+        }
+        */
     </style>
 </head>
 <body>
     <div id="map"></div>
+    <!-- <div id="loading">Loading map tiles...</div> -->
     <div class="info-panel">
         <button id="flyButton" class="fly-button">Start Fly-Through</button>
         <button id="resetButton" class="reset-button">Reset Points</button>
     </div>
 
     <script>
-        // On page load, check if we need to lock to landscape
         window.addEventListener('load', function() {
             checkOrientation();
         });
-        
-        // Check orientation on resize
+
         window.addEventListener('resize', function() {
             checkOrientation();
         });
-        
-        // Function to handle orientation
+
         function checkOrientation() {
-            // Recalculate map size whenever orientation changes
             if (map) {
                 map.invalidateSize();
             }
         }
-        
-        // Initialize map centered on the West Bank
+
         const map = L.map('map').setView([31.9465, 35.3027], 9);
 
-        // Add satellite layer
+        // Satellite layer with increased keepBuffer
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+            attribution: 'Tiles &copy; Esri',
             maxZoom: 20,
-            keepBuffer: 8,
-            tileSize:256,
+            keepBuffer: 6,
             updateWhenIdle: true
         }).addTo(map);
-        
-        // Add labels/place names layer
+
+        // Place names layer
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
-            maxZoom: 20
+            maxZoom: 20,
+            keepBuffer: 6
         }).addTo(map);
 
-        // Variables to store selected points
         let points = [];
         let markers = [];
         const flyButton = document.getElementById('flyButton');
         const resetButton = document.getElementById('resetButton');
 
-        // Handle map clicks
         map.on('click', function(e) {
-            // Only allow two points to be selected
             if (points.length < 2) {
                 const lat = e.latlng.lat.toFixed(4);
                 const lng = e.latlng.lng.toFixed(4);
-                
-                // Create a custom icon for the marker
+
                 const markerIcon = L.divIcon({
-                    html: points.length === 0 ? 
+                    html: points.length === 0 ?
                         `<div style="position: relative;">
                             <div style="background-color: #ff6b6b; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>
                             <div style="position: absolute; top: -25px; left: -15px; color: white; font-weight: bold; text-shadow: 1px 1px 2px black; font-size: 18px;">המנ"ח</div>
                          </div>` :
-                        `<div style="background-color: #4ecdc4; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+                        <div style="background-color: #4ecdc4; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>,
                     className: 'custom-marker',
                     iconSize: points.length === 0 ? [36, 36] : [16, 16],
                     iconAnchor: points.length === 0 ? [18, 18] : [8, 8]
                 });
-                
-                // Add marker to map
+
                 const marker = L.marker([lat, lng], { icon: markerIcon }).addTo(map);
                 markers.push(marker);
-                
-                // Save point
-                points.push({
-                    lat: parseFloat(lat),
-                    lng: parseFloat(lng)
-                });
-                
-                // Update UI
-                updateLocationText();
-                
-                // Show fly button if two points are selected
+
+                points.push({ lat: parseFloat(lat), lng: parseFloat(lng) });
+
                 if (points.length === 2) {
                     flyButton.style.display = 'block';
                 }
             }
         });
 
-        // Update location text
-        function updateLocationText() {
-            // Function kept for compatibility but no longer displays text
-        }
-
-        // Reset all points and markers
         function resetPoints() {
-            // Remove all markers from the map
             markers.forEach(marker => map.removeLayer(marker));
-            
-            // Clear arrays
             markers = [];
             points = [];
-            
-            // Update UI
             flyButton.style.display = 'none';
         }
 
-        // Calculate appropriate zoom level based on distance
         function calculateZoomLevel(pointA, pointB) {
-            // Calculate distance between points (rough approximation)
             const lat1 = pointA.lat * Math.PI / 180;
             const lat2 = pointB.lat * Math.PI / 180;
             const lon1 = pointA.lng * Math.PI / 180;
             const lon2 = pointB.lng * Math.PI / 180;
-            
-            // Haversine formula to calculate distance
-            const R = 6371; // Radius of the Earth in km
+            const R = 6371;
             const dLat = lat2 - lat1;
             const dLon = lon2 - lon1;
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                    Math.cos(lat1) * Math.cos(lat2) * 
-                    Math.sin(dLon/2) * Math.sin(dLon/2);
+                      Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon/2) * Math.sin(dLon/2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
             const distance = R * c;
-            
-        // Map distance to zoom level (adjust these values as needed)
-        if (distance > 10000) return 1;
+
+            if (distance > 10000) return 1;
             if (distance > 5000) return 2;
             if (distance > 2000) return 3;
             if (distance > 1000) return 4;
@@ -213,72 +191,73 @@
             if (distance > 100) return 7;
             if (distance > 50) return 8;
             if (distance > 20) return 9;
-            if (distance > 10) return 16;
-            if (distance > 5) return 17;
-            if (distance > 2) return 18;
-            if (distance > 1) return 19;
-            if (distance > 0.5) return 19;
-            if (distance > 0.2) return 20;
+            if (distance > 10) return 10;
+            if (distance > 5) return 15;
+            if (distance > 2) return 16;
+            if (distance > 1) return 17;
+            if (distance > 0.5) return 18;
+            if (distance > 0.2) return 19;
             return 20;
         }
 
-        // Start fly-through animation
+        function preloadTilesAt(lat, lng, zoom) {
+            const tempMap = L.map(document.createElement('div')).setView([lat, lng], zoom);
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 20
+            }).addTo(tempMap);
+            setTimeout(() => tempMap.remove(), 5000);
+        }
+
         function startFlyThrough() {
             if (points.length !== 2) return;
-            
-            // Disable buttons during animation
+
             flyButton.style.display = 'none';
             resetButton.style.display = 'none';
-            
-            // Calculate appropriate zoom levels
+            // document.getElementById('loading').style.display = 'block';
+
             const startZoom = map.getZoom();
-            const midZoom = calculateZoomLevel(points[0], points[1]) - 1; // Zoom out a bit for the journey
+            const midZoom = calculateZoomLevel(points[0], points[1]) - 1;
             const endZoom = map.getZoom();
-            
-            // Fly to first point (if not already there)
+
+            preloadTilesAt(points[1].lat, points[1].lng, midZoom);
+
             map.flyTo([points[0].lat, points[0].lng], startZoom, {
                 duration: 1,
                 easeLinearity: 0.5,
                 noMoveStart: true
             });
-            
-            // After a short delay, start the main fly animation
+
             setTimeout(() => {
-                // First zoom out
                 map.flyTo([points[0].lat, points[0].lng], midZoom, {
-                    duration: 1.5,
+                    duration: 3,
                     easeLinearity: 0.5
                 });
-                
-                // Then fly to the destination
+
                 setTimeout(() => {
                     map.flyTo([points[1].lat, points[1].lng], midZoom, {
-                        duration: 3,
+                        duration: 6,
                         easeLinearity: 0.3
                     });
-                    
-                    // Then zoom back in at destination
+
                     setTimeout(() => {
                         map.flyTo([points[1].lat, points[1].lng], endZoom, {
-                            duration: 1.5,
+                            duration: 2,
                             easeLinearity: 0.5
                         });
-                        
-                        // Re-enable buttons
+
                         setTimeout(() => {
                             flyButton.style.display = 'block';
                             resetButton.style.display = 'block';
-                        }, 1500);
-                    }, 3000);
-                }, 1500);
+                            // document.getElementById('loading').style.display = 'none';
+                        }, 2000);
+                    }, 6000);
+                }, 3000);
             }, 1000);
         }
 
-        // Event listeners
         flyButton.addEventListener('click', startFlyThrough);
         resetButton.addEventListener('click', resetPoints);
 
-        // Initial setup
         resetPoints();
     </script>
 </body>
