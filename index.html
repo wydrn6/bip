@@ -111,7 +111,7 @@
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
             maxZoom: 20,
-            keepBuffer: 4,
+            keepBuffer: 8,
             tileSize:256,
             updateWhenIdle: true
         }).addTo(map);
@@ -213,12 +213,12 @@
             if (distance > 100) return 7;
             if (distance > 50) return 8;
             if (distance > 20) return 9;
-            if (distance > 10) return 10;
-            if (distance > 5) return 15;
-            if (distance > 2) return 16;
-            if (distance > 1) return 17;
-            if (distance > 0.5) return 18;
-            if (distance > 0.2) return 19;
+            if (distance > 10) return 16;
+            if (distance > 5) return 17;
+            if (distance > 2) return 18;
+            if (distance > 1) return 19;
+            if (distance > 0.5) return 19;
+            if (distance > 0.2) return 20;
             return 20;
         }
 
